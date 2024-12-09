@@ -1,4 +1,4 @@
-import azure.functions as func
+# import azure.functions as func
 import logging
 from flask import Flask,request
 import pandas as pd
@@ -6,7 +6,6 @@ import pickle
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 import requests
-
 
 app = Flask(__name__)
 output = {}
@@ -54,20 +53,25 @@ def predict_classification_scores(model, count_vect, text):
     out = get_top_k_predictions_with_probabilities(model, text_vectorized, k=1)
     return out
 
-app = func.FunctionApp()
+# app = func.FunctionApp()
+@app.route('/')
+def index():
+   return "<center><h2>Simple web app</h2></center>"
 
-@app.route(route="get_group")
-def get_group(req: func.HttpRequest) -> func.HttpResponse:
+
+@app.route('/get-group', methods=['POST'])
+def get_group():
     logging.info('Python HTTP trigger function processed a request.')
 
     try:
         # Get the JSON data from the request
-        data = req.get_json()
+        data = request.get_json()
         if 'name' not in data:
-            return func.HttpResponse("Missing 'name' field in request body.", status_code=400)
+            return {"status":"Some error occurred"}
 
         # call api start
         issue_description = " ".join(data['name'].split())
+        print(issue_description)
         url = 'https://predicttasktype.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-02-15-preview&api-key=4c7b77971b00461db6acf2efb0781501'
         data = f'{{"messages":[{{"role":"system","content":[{{"type":"text","text":"You are an AI assistant that classifies the given description as \'Incident\' or \'Service Request\'. Response should only be \'Incident\' or \'Service Request\'."}}]}},{{"role":"user","content":[{{"type":"text","text":"{issue_description}"}}]}}],"temperature":0.7,"top_p":0.95,"max_tokens":800}}'
         response = requests.post(url, data=data,headers={"Content-Type": "application/json","api-key":"4c7b77971b00461db6acf2efb0781501"})
@@ -76,12 +80,12 @@ def get_group(req: func.HttpRequest) -> func.HttpResponse:
         # print(response.text)
         output.update({"task_type":task_type})
         # call REST api end
-
+        print(output)
         #predict assignment group
         model_output = load_model(type="as_group")
         model = model_output[0]
         count_vect = model_output[1]
-        as_predict = predict_classification_scores(model, count_vect, data['name'])
+        as_predict = predict_classification_scores(model, count_vect, issue_description)
 
         if as_predict and as_predict[0][0][0] is not None:
             output.update({"as_group_status": "success", "pred_assignment_group": as_predict[0][0][0], "pred_assignment_group_score": as_predict[0][0][1]})            
@@ -90,7 +94,7 @@ def get_group(req: func.HttpRequest) -> func.HttpResponse:
         model_output = load_model(type="category")
         model = model_output[0]
         count_vect = model_output[1]
-        category_predict = predict_classification_scores(model, count_vect, data['name'])
+        category_predict = predict_classification_scores(model, count_vect,issue_description)
 
         if category_predict and category_predict[0][0][0] is not None:
             output.update({"category_status": "success", "pred_category": category_predict[0][0][0], "pred_category_score": category_predict[0][0][1]})
@@ -99,13 +103,16 @@ def get_group(req: func.HttpRequest) -> func.HttpResponse:
         model_output = load_model(type="sub_category")
         model = model_output[0]
         count_vect = model_output[1]
-        sub_category_predict = predict_classification_scores(model, count_vect, data['name'])
+        sub_category_predict = predict_classification_scores(model, count_vect, issue_description)
 
         if sub_category_predict and sub_category_predict[0][0][0] is not None:
-            output.update({"category_status": "success", "pred_category": sub_category_predict[0][0][0], "pred_category_score": sub_category_predict[0][0][1]})
+            output.update({"category_status": "success", "pred_sub_category": sub_category_predict[0][0][0], "pred_sub_category_score": sub_category_predict[0][0][1]})
         
             return output
 
     except Exception as e:
-        logging.error(f"Error processing request: {str(e)}")
-        return func.HttpResponse(f"An error occurred: {str(e)}", status_code=500)
+        print(e)
+        return {"status": "exception catched"}
+    
+if __name__ == "__main__":
+   app.run()
